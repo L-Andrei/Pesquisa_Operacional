@@ -265,21 +265,29 @@ def resolver_modelo_2_bnb(
         a_cur, opt, nos = _bnb_etapa(lp, raiz, x, y, inc, t_lim, max_nos)
         nos_tot += nos; otimo_all = otimo_all and opt
         if a_cur is None:
-            return {"viavel": False, "otimo": otimo_all, "nos": nos_tot, "tempo_s": time.perf_counter() - t0}
+            # So se afirma inviabilidade quando a arvore foi esgotada (opt=True);
+            # caso contrario o limite de tempo/nos parou a busca sem provar nada.
+            return {"viavel": False, "status": "INVIAVEL" if opt else "LIMITE_TEMPO",
+                    "otimo": otimo_all, "nos": nos_tot, "tempo_s": time.perf_counter() - t0}
         m = avaliar_solucao(m2, a_cur, modo)
         if et == 1: incl_s = m["Incl"]
         elif et == 2: s_s = m["S"]
         elif et == 3: umax_s = m["U_max"]
 
-    return {"viavel": True, "otimo": otimo_all, "nos": nos_tot, "tempo_s": time.perf_counter() - t0,
+    return {"viavel": True, "status": "OTIMO" if otimo_all else "LIMITE_TEMPO",
+            "otimo": otimo_all, "nos": nos_tot, "tempo_s": time.perf_counter() - t0,
             **avaliar_solucao(m2, a_cur, modo)}
 
 
 def mostrar(titulo: str, r: Dict[str, Any]) -> None:
     if not r["viavel"]:
-        print(f"{titulo}: INVIAVEL | nos={r['nos']} | t={r['tempo_s']:.4f}s")
+        if r["status"] == "INVIAVEL":
+            print(f"{titulo}: INVIAVEL (provado) | nos={r['nos']} | t={r['tempo_s']:.4f}s")
+        else:
+            print(f"{titulo}: {r['status']} (nada provado: nenhuma solucao viavel dentro do limite) "
+                  f"| nos={r['nos']} | t={r['tempo_s']:.4f}s")
     else:
-        st = "OTIMO" if r["otimo"] else "LIMITE"
+        st = "OTIMO" if r["otimo"] else "VIAVEL (limite atingido, nao provada otima)"
         print(f"{titulo}: {st} | OK={r['valido']} | Incl={r['Incl']:.4f} | S={r['S']:.5f} | "
               f"Umax={r['U_max']:.4f} | D={r['D']:.6f} | X86={r['arq']['X86']}, ARM={r['arq']['ARM']} | "
               f"nos={r['nos']} | t={r['tempo_s']:.4f}s")
@@ -310,7 +318,7 @@ if __name__ == "__main__":
     r2b = resolver_modelo_2_bnb(c2, "opcional")
     mostrar("Sim 2A (So ARM obrig.)", r2a)
     mostrar("Sim 2B (So ARM opc.)  ", r2b)
-    assert not r2a["viavel"] and r2b["nao_alocados"] == ["J3_SemEleg"] and abs(r2b["Incl"] - 8 / 18) < 1e-6
+    assert not r2a["viavel"] and r2a["status"] == "INVIAVEL" and r2b["nao_alocados"] == ["J3_SemEleg"] and abs(r2b["Incl"] - 8 / 18) < 1e-6
 
     # Simulacao 3: Cluster misto 3x9 (Ice Lake-SP, Zen 3 e Ampere Altra)
     rng = random.Random(7)

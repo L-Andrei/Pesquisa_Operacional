@@ -727,9 +727,11 @@ def imprimir_relatorio_bnb(
     print(titulo)
     print("=" * 92)
     if not res["viavel"]:
-        print(
-            f"Resultado: {res['status']} na Etapa {res['etapa_falha']}."
-        )
+        if res["status"] == "INVIAVEL":
+            print(f"Resultado: INVIAVEL (provado) na Etapa {res['etapa_falha']}.")
+        else:
+            print(f"Resultado: {res['status']} na Etapa {res['etapa_falha']}. "
+                  f"Nada foi provado: nenhuma solucao viavel foi encontrada dentro do limite.")
         return
 
     rotulo_opt = (
@@ -965,7 +967,7 @@ if __name__ == "__main__":
     imprimir_relatorio_bnb(
         "SIMULACAO 2A (B&B): Sobrecarga no modo obrigatorio", inst2, res2a
     )
-    assert not res2a["viavel"]
+    assert not res2a["viavel"] and res2a["status"] == "INVIAVEL"
 
     res2b = resolver_modelo_1_bnb(inst2, modo="opcional", executar_etapa_4=True)
     imprimir_relatorio_bnb(

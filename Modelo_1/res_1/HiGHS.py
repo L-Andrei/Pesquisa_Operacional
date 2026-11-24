@@ -38,12 +38,39 @@ def criar_var(
     return pulp.LpVariable(nome, lowBound=lowBound, upBound=upBound, cat=cat)
 
 
-def resolver_lp(prob: pulp.LpProblem, solver: pulp.LpSolver) -> Tuple[bool, str]:
-    """Resolve o problema e verifica otimalidade em PuLP 4.x e PuLP 3.x."""
+def resolver_lp(
+    prob: pulp.LpProblem, solver: pulp.LpSolver
+) -> Tuple[str, str, Optional[float]]:
+    """Resolve o problema e classifica o resultado em PuLP 4.x e PuLP 3.x.
+
+    Retorna (estado, status_str, gap_rel), com estado em:
+      "otimo"                    : otimalidade provada;
+      "inviavel"                 : inviabilidade provada;
+      "limite_tempo"             : limite de tempo, mas ha solucao viavel (nao provada otima);
+      "limite_tempo_sem_solucao" : limite de tempo sem nenhuma solucao viavel (nada foi provado);
+      "erro"                     : qualquer outro status (ilimitado, falha do solver etc.).
+    """
     stats = prob.solve(solver)
     if hasattr(pulp, "LpSolveStatus"):
-        return stats.status == pulp.LpSolveStatus.Optimal, stats.status_str
-    return prob.status == pulp.LpStatusOptimal, pulp.LpStatus[prob.status]
+        status_str = str(stats.status_str)
+        if stats.status == pulp.LpSolveStatus.Optimal:
+            return "otimo", status_str, 0.0
+        baixo = status_str.lower()
+        if "infeasible" in baixo:
+            return "inviavel", status_str, None
+        if "timelimit" in baixo.replace(" ", ""):
+            gap = getattr(stats, "gap_rel", None)
+            if getattr(stats, "has_solution", False):
+                return "limite_tempo", status_str, gap
+            return "limite_tempo_sem_solucao", status_str, None
+        return "erro", status_str, None
+    # PuLP 3.x
+    status_str = pulp.LpStatus[prob.status]
+    if prob.status == pulp.LpStatusOptimal:
+        return "otimo", status_str, 0.0
+    if prob.status == pulp.LpStatusInfeasible:
+        return "inviavel", status_str, None
+    return "erro", status_str, None
 
 
 def obter_solver_highs(
@@ -154,7 +181,6 @@ def resolver_modelo_1(
 
     x, y, r = len(inst.servidores), len(inst.servicos), len(inst.recursos)
     peso_total = sum(inst.p)
-    solver = obter_solver_highs(time_limit=time_limit, msg=msg, warm_start=True)
 
     historico: List[Dict[str, Any]] = []
     a_atual: Optional[List[List[int]]] = None
@@ -235,16 +261,31 @@ def resolver_modelo_1(
                             prob += (d[i][k] >= ubar[k] - u[i][k], f"Desv_neg_i{i}_k{k}")
                     prob.setObjective(pulp.lpSum(d[i][k] for i in range(x) for k in range(r)) / (x * r))
 
+        # Warm start so quando ha solucao anterior (evita aviso do PuLP na primeira etapa)
+        solver = obter_solver_highs(
+            time_limit=time_limit, msg=msg, warm_start=a_atual is not None
+        )
         t0 = time.perf_counter()
-        otimo, status_str = resolver_lp(prob, solver)
+        estado, status_str, gap = resolver_lp(prob, solver)
         dt = time.perf_counter() - t0
-        if not otimo:
+        if estado == "inviavel":
             return {
                 "viavel": False,
                 "etapa_falha": etapa,
-                "status": status_str,
+                "status": "INVIAVEL",
+                "status_solver": status_str,
                 "historico": historico,
             }
+        if estado in ("limite_tempo_sem_solucao", "erro"):
+            # Nao se afirma inviabilidade: o solver apenas nao concluiu.
+            return {
+                "viavel": False,
+                "etapa_falha": etapa,
+                "status": "LIMITE_TEMPO" if estado != "erro" else "ERRO",
+                "status_solver": status_str,
+                "historico": historico,
+            }
+        # estado "otimo" ou "limite_tempo" (com solucao viavel, nao provada otima)
 
         a_atual = [
             [int(round(pulp.value(a[i][j]) or 0.0)) for j in range(y)]
@@ -257,12 +298,19 @@ def resolver_modelo_1(
             s_star = m["S"]
         elif etapa == 3:
             umax_star = m["U_max"]
-        historico.append({"etapa": nomes_etapa[etapa], "tempo_s": dt, **m})
+        historico.append({
+            "etapa": nomes_etapa[etapa],
+            "tempo_s": dt,
+            "status": "OTIMO" if estado == "otimo" else "LIMITE_TEMPO",
+            "gap_rel": gap,
+            **m,
+        })
 
     assert a_atual is not None
     ok, erros = validar_solucao(inst, a_atual, modo=modo)
     return {
         "viavel": True,
+        "otimo_global": all(h["status"] == "OTIMO" for h in historico),
         "valido": ok,
         "erros_validacao": erros,
         "alocacao": a_atual,
@@ -277,22 +325,30 @@ def imprimir_relatorio(titulo: str, inst: InstanciaModelo1, res: Dict[str, Any])
     print(titulo)
     print("=" * 78)
     if not res["viavel"]:
-        print(f"Resultado: INVIAVEL na Etapa {res['etapa_falha']} (status HiGHS: {res['status']}).")
+        if res["status"] == "INVIAVEL":
+            print(f"Resultado: INVIAVEL (provado) na Etapa {res['etapa_falha']} "
+                  f"(status HiGHS: {res['status_solver']}).")
+        else:
+            print(f"Resultado: {res['status']} na Etapa {res['etapa_falha']} "
+                  f"(status HiGHS: {res['status_solver']}). Nada foi provado: "
+                  f"nenhuma solucao viavel foi encontrada dentro do limite.")
         return
 
+    rotulo = "OTIMO" if res["otimo_global"] else "SOLUCAO VIAVEL (limite de tempo em alguma etapa)"
     print(
-        f"Status: OTIMO | Auditoria de restricoes: {'OK' if res['valido'] else 'FALHOU'} | "
+        f"Status: {rotulo} | Auditoria de restricoes: {'OK' if res['valido'] else 'FALHOU'} | "
         f"Tempo total: {res['tempo_total_s']:.4f} s"
     )
     for erro in res["erros_validacao"]:
         print(f"  [ERRO] {erro}")
 
     print("\nEvolucao por etapa lexicografica:")
-    print(f"  {'Etapa':<22} {'Incl':>8} {'S (QoS)':>10} {'U_max':>9} {'Desvio D':>10} {'Tempo (s)':>10}")
+    print(f"  {'Etapa':<22} {'Status':<13} {'Incl':>8} {'S (QoS)':>10} {'U_max':>9} {'Desvio D':>10} {'Gap%':>7} {'Tempo (s)':>10}")
     for h in res["historico"]:
+        gap_pct = (h["gap_rel"] or 0.0) * 100.0
         print(
-            f"  {h['etapa']:<22} {h['Incl']:>8.4f} {h['S']:>10.6f} "
-            f"{h['U_max']:>9.4f} {h['D']:>10.6f} {h['tempo_s']:>10.4f}"
+            f"  {h['etapa']:<22} {h['status']:<13} {h['Incl']:>8.4f} {h['S']:>10.6f} "
+            f"{h['U_max']:>9.4f} {h['D']:>10.6f} {gap_pct:>7.2f} {h['tempo_s']:>10.4f}"
         )
 
     m = res["metricas"]
@@ -384,7 +440,7 @@ if __name__ == "__main__":
     inst2 = cenario_2_sobrecarga_diagnostico()
     res2a = resolver_modelo_1(inst2, modo="obrigatorio", executar_etapa_4=True)
     imprimir_relatorio("SIMULACAO 2A: Sobrecarga no modo obrigatorio", inst2, res2a)
-    assert not res2a["viavel"]
+    assert not res2a["viavel"] and res2a["status"] == "INVIAVEL"
 
     res2b = resolver_modelo_1(inst2, modo="opcional", executar_etapa_4=True)
     imprimir_relatorio("SIMULACAO 2B: Diagnostico no modo opcional com pesos", inst2, res2b)

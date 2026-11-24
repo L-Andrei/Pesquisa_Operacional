@@ -37,12 +37,39 @@ def criar_var(
     return pulp.LpVariable(nome, lowBound=lowBound, upBound=upBound, cat=cat)
 
 
-def resolver_lp(prob: pulp.LpProblem, solver: pulp.LpSolver) -> Tuple[bool, str]:
-    """Resolve o problema e verifica otimalidade em PuLP 4.x e PuLP 3.x."""
+def resolver_lp(
+    prob: pulp.LpProblem, solver: pulp.LpSolver
+) -> Tuple[str, str, Optional[float]]:
+    """Resolve o problema e classifica o resultado em PuLP 4.x e PuLP 3.x.
+
+    Retorna (estado, status_str, gap_rel), com estado em:
+      "otimo"                    : otimalidade provada;
+      "inviavel"                 : inviabilidade provada;
+      "limite_tempo"             : limite de tempo, mas ha solucao viavel (nao provada otima);
+      "limite_tempo_sem_solucao" : limite de tempo sem nenhuma solucao viavel (nada foi provado);
+      "erro"                     : qualquer outro status (ilimitado, falha do solver etc.).
+    """
     stats = prob.solve(solver)
     if hasattr(pulp, "LpSolveStatus"):
-        return stats.status == pulp.LpSolveStatus.Optimal, stats.status_str
-    return prob.status == pulp.LpStatusOptimal, pulp.LpStatus[prob.status]
+        status_str = str(stats.status_str)
+        if stats.status == pulp.LpSolveStatus.Optimal:
+            return "otimo", status_str, 0.0
+        baixo = status_str.lower()
+        if "infeasible" in baixo:
+            return "inviavel", status_str, None
+        if "timelimit" in baixo.replace(" ", ""):
+            gap = getattr(stats, "gap_rel", None)
+            if getattr(stats, "has_solution", False):
+                return "limite_tempo", status_str, gap
+            return "limite_tempo_sem_solucao", status_str, None
+        return "erro", status_str, None
+    # PuLP 3.x
+    status_str = pulp.LpStatus[prob.status]
+    if prob.status == pulp.LpStatusOptimal:
+        return "otimo", status_str, 0.0
+    if prob.status == pulp.LpStatusInfeasible:
+        return "inviavel", status_str, None
+    return "erro", status_str, None
 
 
 def construir_modelo_2(
@@ -110,7 +137,7 @@ def avaliar_solucao(m2: Modelo2, a: List[List[int]], modo: str) -> Dict[str, Any
             "alocados": aloc, "nao_alocados": fora, "arq": arq_cnt}
 
 
-def _solver_highs(time_limit: Optional[float] = None) -> pulp.LpSolver:
+def _solver_highs(time_limit: Optional[float] = None, warm_start: bool = True) -> pulp.LpSolver:
     for cls in (getattr(pulp, "HiGHS", None), getattr(pulp, "HiGHS_CMD", None)):
         if cls is None:
             continue
@@ -118,7 +145,7 @@ def _solver_highs(time_limit: Optional[float] = None) -> pulp.LpSolver:
         kw: Dict[str, Any] = {"msg": False}
         if time_limit is not None and "timeLimit" in sig:
             kw["timeLimit"] = time_limit
-        if "warmStart" in sig:
+        if warm_start and "warmStart" in sig:
             kw["warmStart"] = True
         s = cls(**kw)
         if s.available():
@@ -132,8 +159,9 @@ def resolver_modelo_2_highs(
 ) -> Dict[str, Any]:
     """Resolve as etapas lexicograficas do Modelo 2 reaproveitando o mesmo LpProblem."""
     x, y, r = len(m2.servidores), len(m2.servicos), 4
-    solver = _solver_highs(time_limit)
     t0 = time.perf_counter()
+    # "otimo": todas as etapas provadas otimas; "falha": motivo de parada sem solucao
+    estado_global: Dict[str, Any] = {"otimo": True, "falha": None, "tem_inicial": False}
 
     mdl = pulp.LpProblem("Modelo2_HiGHS", pulp.LpMinimize)
     a = [[criar_var(mdl, f"a_{i}_{j}", cat=pulp.LpBinary) for j in range(y)] for i in range(x)]
@@ -154,19 +182,28 @@ def resolver_modelo_2_highs(
 
     def rodar(obj: Any) -> Optional[List[List[int]]]:
         mdl.setObjective(obj)
-        otimo, _ = resolver_lp(mdl, solver)
-        if not otimo:
+        solver = _solver_highs(time_limit, warm_start=estado_global["tem_inicial"])
+        estado, _, _ = resolver_lp(mdl, solver)
+        if estado == "inviavel":
+            estado_global["falha"] = "INVIAVEL"
             return None
+        if estado in ("limite_tempo_sem_solucao", "erro"):
+            # Nao se afirma inviabilidade: o solver apenas nao concluiu.
+            estado_global["falha"] = "LIMITE_TEMPO" if estado != "erro" else "ERRO"
+            return None
+        if estado == "limite_tempo":
+            estado_global["otimo"] = False
         sol = [[int(round(pulp.value(a[i][j]) or 0.0)) for j in range(y)] for i in range(x)]
         for i in range(x):
             for j in range(y):
                 a[i][j].setInitialValue(sol[i][j])
+        estado_global["tem_inicial"] = True
         return sol
 
     if modo == "opcional":                                             # Etapa 1: max Incl == min(-Incl)
         sol = rodar(-1.0 * incl_expr)
         if sol is None:
-            return {"viavel": False, "tempo_s": time.perf_counter() - t0}
+            return {"viavel": False, "status": estado_global["falha"], "tempo_s": time.perf_counter() - t0}
         mdl += incl_expr >= avaliar_solucao(m2, sol, modo)["Incl"] - eps
 
     s = [[criar_var(mdl, f"s_{i}_{k}", lowBound=0.0) for k in range(r)] for i in range(x)]
@@ -176,7 +213,7 @@ def resolver_modelo_2_highs(
     S_expr = pulp.lpSum(s[i][k] for i in range(x) for k in range(r)) / (x * r)
     sol = rodar(S_expr)
     if sol is None:
-        return {"viavel": False, "tempo_s": time.perf_counter() - t0}
+        return {"viavel": False, "status": estado_global["falha"], "tempo_s": time.perf_counter() - t0}
     mdl += S_expr <= avaliar_solucao(m2, sol, modo)["S"] + eps
 
     U_max = criar_var(mdl, "U_max", lowBound=0.0, upBound=1.0)         # Etapa 3: Gargalo Min-Max
@@ -185,7 +222,7 @@ def resolver_modelo_2_highs(
             mdl += U_max >= u[i][k]
     sol = rodar(U_max)
     if sol is None:
-        return {"viavel": False, "tempo_s": time.perf_counter() - t0}
+        return {"viavel": False, "status": estado_global["falha"], "tempo_s": time.perf_counter() - t0}
 
     if etapa4:                                                         # Etapa 4: Equilibrio L1
         mdl += U_max <= avaliar_solucao(m2, sol, modo)["U_max"] + eps
@@ -197,9 +234,11 @@ def resolver_modelo_2_highs(
                 mdl += d[i][k] >= ubar[k] - u[i][k]
         sol = rodar(pulp.lpSum(d[i][k] for i in range(x) for k in range(r)) / (x * r))
         if sol is None:
-            return {"viavel": False, "tempo_s": time.perf_counter() - t0}
+            return {"viavel": False, "status": estado_global["falha"], "tempo_s": time.perf_counter() - t0}
 
-    return {"viavel": True, "tempo_s": time.perf_counter() - t0, **avaliar_solucao(m2, sol, modo)}
+    return {"viavel": True, "otimo": estado_global["otimo"],
+            "status": "OTIMO" if estado_global["otimo"] else "LIMITE_TEMPO",
+            "tempo_s": time.perf_counter() - t0, **avaliar_solucao(m2, sol, modo)}
 
 
 def mostrar(titulo: str, m2: Modelo2, r: Dict[str, Any]) -> None:
@@ -207,10 +246,14 @@ def mostrar(titulo: str, m2: Modelo2, r: Dict[str, Any]) -> None:
         sem_eleg = [m2.servicos[j] for j in range(len(m2.servicos))
                     if sum(m2.E[i][j] for i in range(len(m2.servidores))) == 0]
         extra = f" | sem elegivel={sem_eleg}" if sem_eleg else ""
-        print(f"{titulo}: INVIAVEL{extra} | t={r['tempo_s']:.4f}s")
+        if r["status"] == "INVIAVEL":
+            print(f"{titulo}: INVIAVEL (provado){extra} | t={r['tempo_s']:.4f}s")
+        else:
+            print(f"{titulo}: {r['status']} (nada provado: nenhuma solucao viavel dentro do limite) | t={r['tempo_s']:.4f}s")
     else:
         fora = f" | fora={r['nao_alocados']}" if r["nao_alocados"] else ""
-        print(f"{titulo}: OTIMO | OK={r['valido']} | Incl={r['Incl']:.4f} | S={r['S']:.6f} | "
+        st = "OTIMO" if r["otimo"] else "VIAVEL (limite de tempo, nao provada otima)"
+        print(f"{titulo}: {st} | OK={r['valido']} | Incl={r['Incl']:.4f} | S={r['S']:.6f} | "
               f"Umax={r['U_max']:.4f} | D={r['D']:.6f} | X86={r['arq']['X86']}, ARM={r['arq']['ARM']}"
               f"{fora} | t={r['tempo_s']:.4f}s")
 
@@ -299,7 +342,7 @@ if __name__ == "__main__":
     r3b = resolver_modelo_2_highs(c3, "opcional")
     mostrar("Sim 3A (So ARM obr)", c3, r3a)
     mostrar("Sim 3B (So ARM opc)", c3, r3b)
-    assert not r3a["viavel"] and r3b["viavel"] and r3b["valido"]
+    assert not r3a["viavel"] and r3a["status"] == "INVIAVEL" and r3b["viavel"] and r3b["valido"]
     assert abs(r3b["Incl"] - 8 / 18) < 1e-6 and abs(r3b["U_max"] - 0.40) < 1e-6
     assert abs(r3b["D"]) < 1e-6 and r3b["nao_alocados"] == ["J3_SemElegivel"]
 
@@ -317,8 +360,9 @@ if __name__ == "__main__":
         eleg_arm = sum(cs.E[3][j] for j in range(len(cs.servicos)))
         if rs["viavel"]:
             print(f"  {v_t:>5.2f} {eleg_arm:>8d} {rs['arq']['X86']:>5d} {rs['arq']['ARM']:>5d} "
-                  f"{rs['S']:>10.6f} {rs['U_max']:>8.4f} {rs['D']:>10.6f} {rs['tempo_s']:>9.4f}")
+                  f"{rs['S']:>10.6f} {rs['U_max']:>8.4f} {rs['D']:>10.6f} {rs['tempo_s']:>9.4f}"
+                  + ("" if rs["otimo"] else "  (limite de tempo)"))
         else:
-            print(f"  {v_t:>5.2f} {eleg_arm:>8d} {'INVIAVEL':>25}")
+            print(f"  {v_t:>5.2f} {eleg_arm:>8d} {rs['status']:>25}")
 
     print("\nTodas as verificacoes analiticas do Modelo 2 passaram.")
