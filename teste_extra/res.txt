@@ -1,0 +1,16 @@
+Running HiGHS 1.16.0 (git hash: f3f113d): Copyright (c) 2026 under MIT licence terms
+Includes third-party software components, see THIRD_PARTY_NOTICES.md for full details
+
+=== v_ARM = 0.51
+Modelo 1 (ignora arquitetura): status=OTIMO U_max_modelo1=0.3172 D=0.0249 servicos em x86/ARM = 10/14
+  Avaliado no Modelo 2: servicos em servidor inelegivel = 2 -> [('SeqLat_05', 'S5_Altra'), ('SeqLat_06', 'S6_Altra')]
+  Avaliado no Modelo 2: violacoes de capacidade de pico = 0 -> 
+  Utilizacao media real maxima (Modelo 2) = 0.5071
+Modelo 2 (considera arquitetura): status=LIMITE_TEMPO U_max=0.3976 x86/ARM=13/11
+
+=== v_ARM = 0.8
+Modelo 1 (ignora arquitetura): status=OTIMO U_max_modelo1=0.3172 D=0.0249 servicos em x86/ARM = 10/14
+  Avaliado no Modelo 2: servicos em servidor inelegivel = 0 -> []
+  Avaliado no Modelo 2: violacoes de capacidade de pico = 0 -> 
+  Utilizacao media real maxima (Modelo 2) = 0.3436
+Modelo 2 (considera arquitetura): status=OTIMO U_max=0.3180 x86/ARM=11/13
