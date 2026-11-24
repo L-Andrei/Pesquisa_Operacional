@@ -1,0 +1,63 @@
+Running HiGHS 1.16.0 (git hash: f3f113d): Copyright (c) 2026 under MIT licence terms
+Includes third-party software components, see THIRD_PARTY_NOTICES.md for full details
+
+==============================================================================
+SIMULACAO 1: Heterogeneo viavel e efeito da Etapa 4
+==============================================================================
+Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0982 s
+
+Evolucao por etapa lexicografica:
+  Etapa                      Incl    S (QoS)     U_max   Desvio D  Tempo (s)
+  Etapa 2 (QoS / S)        1.0000   0.000000    0.6000   0.087500     0.0243
+  Etapa 3 (Gargalo)        1.0000   0.000000    0.6000   0.087500     0.0042
+  Etapa 4 (Equilibrio)     1.0000   0.000000    0.6000   0.033333     0.0697
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1_Grande: CPU=60.0% (pico 80.0%), Rede=40.0% (pico 50.0%), RAM=37.5% (pico 50.0%), Armazenamento=40.0% (pico 50.0%)
+  S2_Medio: CPU=50.0% (pico 70.0%), Rede=30.0% (pico 50.0%), RAM=37.5% (pico 50.0%), Armazenamento=30.0% (pico 40.0%)
+  S3_Medio: CPU=50.0% (pico 70.0%), Rede=30.0% (pico 50.0%), RAM=37.5% (pico 50.0%), Armazenamento=30.0% (pico 40.0%)
+
+==============================================================================
+SIMULACAO 2A: Sobrecarga no modo obrigatorio
+==============================================================================
+Resultado: INVIAVEL na Etapa 2 (status HiGHS: Infeasible).
+
+==============================================================================
+SIMULACAO 2B: Diagnostico no modo opcional com pesos
+==============================================================================
+Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0909 s
+
+Evolucao por etapa lexicografica:
+  Etapa                      Incl    S (QoS)     U_max   Desvio D  Tempo (s)
+  Etapa 1 (Inclusao)       0.9231   0.015625    0.8750   0.112500     0.0610
+  Etapa 2 (QoS / S)        0.9231   0.015625    0.8750   0.112500     0.0109
+  Etapa 3 (Gargalo)        0.9231   0.015625    0.8750   0.112500     0.0034
+  Etapa 4 (Equilibrio)     0.9231   0.015625    0.8750   0.112500     0.0156
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1: CPU=87.5% (pico 100.0%), Rede=50.0% (pico 70.0%), RAM=62.5% (pico 81.2%), Armazenamento=50.0% (pico 65.0%)
+  S2: CPU=62.5% (pico 75.0%), Rede=30.0% (pico 40.0%), RAM=37.5% (pico 50.0%), Armazenamento=30.0% (pico 40.0%)
+
+Servicos nao alocados: J4_Baixo
+
+==============================================================================
+SIMULACAO 3: Separacao entre pico e media
+==============================================================================
+Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0109 s
+
+Evolucao por etapa lexicografica:
+  Etapa                      Incl    S (QoS)     U_max   Desvio D  Tempo (s)
+  Etapa 2 (QoS / S)        1.0000   0.000000    0.5000   0.092188     0.0017
+  Etapa 3 (Gargalo)        1.0000   0.000000    0.5000   0.092188     0.0056
+  Etapa 4 (Equilibrio)     1.0000   0.000000    0.5000   0.092188     0.0036
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1: CPU=50.0% (pico 100.0%), Rede=40.0% (pico 70.0%), RAM=43.8% (pico 87.5%), Armazenamento=35.0% (pico 70.0%)
+  S2: CPU=30.0% (pico 60.0%), Rede=20.0% (pico 40.0%), RAM=25.0% (pico 50.0%), Armazenamento=20.0% (pico 40.0%)
+
+==============================================================================
+SIMULACAO 4: Cluster heterogeneo medio (6x24)
+==============================================================================
+Resultado: INVIAVEL na Etapa 3 (status HiGHS: TimeLimit).
+
+Todas as verificacoes analiticas dos Cenarios 1, 2 e 3 passaram.

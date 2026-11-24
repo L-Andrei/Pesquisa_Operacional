@@ -1,0 +1,98 @@
+
+============================================================================================
+SIMULACAO 1 (B&B): Heterogeneo viavel e efeito da Etapa 4
+============================================================================================
+Status: OTIMO GLOBAL PROVADO | Auditoria: OK | Nos LP totais: 111 | Tempo total: 0.9341 s
+
+Evolucao por etapa lexicografica (Branch-and-Bound):
+  Etapa                 Status          Incl   S (QoS)   U_max  Desvio D    Nos   Gap%  Tempo(s)
+  Etapa 2 (QoS / S)     OTIMO         1.0000  0.000000  0.6000  0.087500      5   0.00    0.0278
+  Etapa 3 (Gargalo)     OTIMO         1.0000  0.000000  0.6000  0.087500     85   0.00    0.7008
+  Etapa 4 (Equilibrio)  OTIMO         1.0000  0.000000  0.6000  0.033333     21   0.00    0.2056
+
+Estatisticas de poda por etapa:
+  Etapa 2 (QoS / S)     -> Inviabilidade: 1     | Limitante: 1     | Integralidade: 1    
+  Etapa 3 (Gargalo)     -> Inviabilidade: 30    | Limitante: 13    | Integralidade: 0    
+  Etapa 4 (Equilibrio)  -> Inviabilidade: 8     | Limitante: 2     | Integralidade: 1    
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1_Grande: CPU=60.0% (pico 80.0%), Rede=40.0% (pico 50.0%), RAM=37.5% (pico 50.0%), Armazenamento=40.0% (pico 50.0%)
+  S2_Medio: CPU=50.0% (pico 70.0%), Rede=30.0% (pico 50.0%), RAM=37.5% (pico 50.0%), Armazenamento=30.0% (pico 40.0%)
+  S3_Medio: CPU=50.0% (pico 70.0%), Rede=30.0% (pico 50.0%), RAM=37.5% (pico 50.0%), Armazenamento=30.0% (pico 40.0%)
+
+============================================================================================
+SIMULACAO 2A (B&B): Sobrecarga no modo obrigatorio
+============================================================================================
+Resultado: INVIAVEL na Etapa 2.
+
+============================================================================================
+SIMULACAO 2B (B&B): Diagnostico no modo opcional com pesos
+============================================================================================
+Status: OTIMO GLOBAL PROVADO | Auditoria: OK | Nos LP totais: 72 | Tempo total: 1.0977 s
+
+Evolucao por etapa lexicografica (Branch-and-Bound):
+  Etapa                 Status          Incl   S (QoS)   U_max  Desvio D    Nos   Gap%  Tempo(s)
+  Etapa 1 (Inclusao)    OTIMO         0.9231  0.015625  0.8750  0.112500      5   0.00    0.1015
+  Etapa 2 (QoS / S)     OTIMO         0.9231  0.015625  0.8750  0.112500     21   0.00    0.3144
+  Etapa 3 (Gargalo)     OTIMO         0.9231  0.015625  0.8750  0.112500     19   0.00    0.2307
+  Etapa 4 (Equilibrio)  OTIMO         0.9231  0.015625  0.8750  0.112500     27   0.00    0.4510
+
+Estatisticas de poda por etapa:
+  Etapa 1 (Inclusao)    -> Inviabilidade: 0     | Limitante: 2     | Integralidade: 1    
+  Etapa 2 (QoS / S)     -> Inviabilidade: 7     | Limitante: 4     | Integralidade: 0    
+  Etapa 3 (Gargalo)     -> Inviabilidade: 6     | Limitante: 4     | Integralidade: 0    
+  Etapa 4 (Equilibrio)  -> Inviabilidade: 10    | Limitante: 4     | Integralidade: 0    
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1: CPU=87.5% (pico 100.0%), Rede=50.0% (pico 70.0%), RAM=62.5% (pico 81.2%), Armazenamento=50.0% (pico 65.0%)
+  S2: CPU=62.5% (pico 75.0%), Rede=30.0% (pico 40.0%), RAM=37.5% (pico 50.0%), Armazenamento=30.0% (pico 40.0%)
+
+Servicos nao alocados: J4_Baixo
+
+============================================================================================
+SIMULACAO 3 (B&B): Separacao entre pico e media
+============================================================================================
+Status: OTIMO GLOBAL PROVADO | Auditoria: OK | Nos LP totais: 23 | Tempo total: 0.2871 s
+
+Evolucao por etapa lexicografica (Branch-and-Bound):
+  Etapa                 Status          Incl   S (QoS)   U_max  Desvio D    Nos   Gap%  Tempo(s)
+  Etapa 2 (QoS / S)     OTIMO         1.0000  0.000000  0.5000  0.092188      1   0.00    0.0034
+  Etapa 3 (Gargalo)     OTIMO         1.0000  0.000000  0.5000  0.092188     11   0.00    0.1278
+  Etapa 4 (Equilibrio)  OTIMO         1.0000  0.000000  0.5000  0.092188     11   0.00    0.1559
+
+Estatisticas de poda por etapa:
+  Etapa 2 (QoS / S)     -> Inviabilidade: 0     | Limitante: 0     | Integralidade: 1    
+  Etapa 3 (Gargalo)     -> Inviabilidade: 2     | Limitante: 4     | Integralidade: 0    
+  Etapa 4 (Equilibrio)  -> Inviabilidade: 2     | Limitante: 4     | Integralidade: 0    
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1: CPU=50.0% (pico 100.0%), Rede=40.0% (pico 70.0%), RAM=43.8% (pico 87.5%), Armazenamento=35.0% (pico 70.0%)
+  S2: CPU=30.0% (pico 60.0%), Rede=20.0% (pico 40.0%), RAM=25.0% (pico 50.0%), Armazenamento=20.0% (pico 40.0%)
+
+============================================================================================
+SIMULACAO 4 (B&B): Cluster heterogeneo intermediario (3x9)
+============================================================================================
+Status: OTIMO GLOBAL PROVADO | Auditoria: OK | Nos LP totais: 669 | Tempo total: 3.9825 s
+
+Evolucao por etapa lexicografica (Branch-and-Bound):
+  Etapa                 Status          Incl   S (QoS)   U_max  Desvio D    Nos   Gap%  Tempo(s)
+  Etapa 2 (QoS / S)     OTIMO         1.0000  0.000000  0.7379  0.246134      1   0.00    0.0171
+  Etapa 3 (Gargalo)     OTIMO         1.0000  0.000000  0.4600  0.020296    525   0.00    3.0971
+  Etapa 4 (Equilibrio)  OTIMO         1.0000  0.000000  0.4600  0.017626    143   0.00    0.8683
+
+Estatisticas de poda por etapa:
+  Etapa 2 (QoS / S)     -> Inviabilidade: 0     | Limitante: 0     | Integralidade: 1    
+  Etapa 3 (Gargalo)     -> Inviabilidade: 0     | Limitante: 259   | Integralidade: 4    
+  Etapa 4 (Equilibrio)  -> Inviabilidade: 22    | Limitante: 49    | Integralidade: 1    
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1_Grande: CPU=43.0% (pico 56.9%), Rede=35.9% (pico 45.5%), RAM=43.8% (pico 52.5%), Armazenamento=38.8% (pico 46.3%)
+  S2_Medio: CPU=42.2% (pico 55.5%), Rede=34.7% (pico 44.7%), RAM=44.8% (pico 53.8%), Armazenamento=38.8% (pico 45.3%)
+  S3_Pequeno: CPU=46.0% (pico 57.8%), Rede=39.6% (pico 49.9%), RAM=43.7% (pico 52.2%), Armazenamento=46.0% (pico 54.3%)
+
+============================================================================================
+SIMULACAO 5 (B&B): Teste de escalabilidade no cluster medio (6x24)
+============================================================================================
+Resultado: LIMITE_TEMPO na Etapa 2.
+
+Todas as verificacoes analiticas do Branch-and-Bound passaram.
