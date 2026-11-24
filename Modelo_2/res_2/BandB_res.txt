@@ -1,4 +1,4 @@
-Sim 1 (ARM vs x86): OTIMO | OK=True | Incl=1.0000 | S=0.00000 | Umax=0.4000 | D=0.003125 | X86=1, ARM=2 | nos=7 | t=0.0273s
-Sim 2A (So ARM obrig.): INVIAVEL | nos=1 | t=0.0024s
-Sim 2B (So ARM opc.)  : OTIMO | OK=True | Incl=0.4444 | S=0.00000 | Umax=0.4000 | D=0.000000 | X86=0, ARM=2 | nos=12 | t=0.0412s
-Sim 3 (Misto 3x9)     : OTIMO | OK=True | Incl=1.0000 | S=0.00000 | Umax=0.2576 | D=0.012364 | X86=6, ARM=3 | nos=223 | t=0.9705s
+Sim 1 (ARM vs x86): OTIMO | OK=True | Incl=1.0000 | S=0.00000 | Umax=0.4000 | D=0.003125 | X86=1, ARM=2 | nos=7 | t=0.0272s
+Sim 2A (So ARM obrig.): INVIAVEL (provado) | nos=1 | t=0.0039s
+Sim 2B (So ARM opc.)  : OTIMO | OK=True | Incl=0.4444 | S=0.00000 | Umax=0.4000 | D=0.000000 | X86=0, ARM=2 | nos=12 | t=0.0447s
+Sim 3 (Misto 3x9)     : OTIMO | OK=True | Incl=1.0000 | S=0.00000 | Umax=0.2576 | D=0.012364 | X86=6, ARM=3 | nos=223 | t=0.8752s

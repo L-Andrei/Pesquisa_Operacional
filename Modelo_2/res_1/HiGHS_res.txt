@@ -1,16 +1,16 @@
 Running HiGHS 1.16.0 (git hash: f3f113d): Copyright (c) 2026 under MIT licence terms
 Includes third-party software components, see THIRD_PARTY_NOTICES.md for full details
-Sim 1  (ARM vs x86): OTIMO | OK=True | Incl=1.0000 | S=0.000000 | Umax=0.4000 | D=0.003125 | X86=1, ARM=2 | t=0.0230s
-Sim 2  (Pre-proc.) : OTIMO | OK=True | Incl=1.0000 | S=0.000000 | Umax=0.6000 | D=0.045312 | X86=3, ARM=1 | t=0.0112s
-Sim 3A (So ARM obr): INVIAVEL | sem elegivel=['J3_SemElegivel'] | t=0.0017s
-Sim 3B (So ARM opc): OTIMO | OK=True | Incl=0.4444 | S=0.000000 | Umax=0.4000 | D=0.000000 | X86=0, ARM=2 | fora=['J3_SemElegivel'] | t=0.0125s
-Sim 4  (Misto 6x24): INVIAVEL | t=30.1145s
+Sim 1  (ARM vs x86): OTIMO | OK=True | Incl=1.0000 | S=0.000000 | Umax=0.4000 | D=0.003125 | X86=1, ARM=2 | t=0.0110s
+Sim 2  (Pre-proc.) : OTIMO | OK=True | Incl=1.0000 | S=0.000000 | Umax=0.6000 | D=0.045312 | X86=3, ARM=1 | t=0.0116s
+Sim 3A (So ARM obr): INVIAVEL (provado) | sem elegivel=['J3_SemElegivel'] | t=0.0025s
+Sim 3B (So ARM opc): OTIMO | OK=True | Incl=0.4444 | S=0.000000 | Umax=0.4000 | D=0.000000 | X86=0, ARM=2 | fora=['J3_SemElegivel'] | t=0.0119s
+Sim 4  (Misto 6x24): OTIMO | OK=True | Incl=1.0000 | S=0.000000 | Umax=0.3976 | D=0.053716 | X86=13, ARM=11 | t=41.1281s
 
 Sim 5 (Sensibilidade v_ARM no cluster 6x24):
   v_ARM Eleg_ARM   X86   ARM    S (QoS)    U_max   Desvio D  Tempo(s)
-   0.45       17                  INVIAVEL
-   0.51       19                  INVIAVEL
-   0.65       22    12    12   0.000000   0.3523   0.027990   17.5739
-   0.80       22    11    13   0.000000   0.3180   0.019380   13.8874
+   0.45       17    14    10   0.000000   0.4232   0.044685   48.2020  (limite de tempo)
+   0.51       19    13    11   0.000000   0.3976   0.053716   40.0615
+   0.65       22    12    12   0.000000   0.3523   0.027990   13.2115
+   0.80       22    11    13   0.000000   0.3180   0.019380   11.6828
 
 Todas as verificacoes analiticas do Modelo 2 passaram.

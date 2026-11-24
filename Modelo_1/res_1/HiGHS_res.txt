@@ -4,13 +4,13 @@ Includes third-party software components, see THIRD_PARTY_NOTICES.md for full de
 ==============================================================================
 SIMULACAO 1: Heterogeneo viavel e efeito da Etapa 4
 ==============================================================================
-Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0982 s
+Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0335 s
 
 Evolucao por etapa lexicografica:
-  Etapa                      Incl    S (QoS)     U_max   Desvio D  Tempo (s)
-  Etapa 2 (QoS / S)        1.0000   0.000000    0.6000   0.087500     0.0243
-  Etapa 3 (Gargalo)        1.0000   0.000000    0.6000   0.087500     0.0042
-  Etapa 4 (Equilibrio)     1.0000   0.000000    0.6000   0.033333     0.0697
+  Etapa                  Status            Incl    S (QoS)     U_max   Desvio D    Gap%  Tempo (s)
+  Etapa 2 (QoS / S)      OTIMO           1.0000   0.000000    0.6000   0.087500    0.00     0.0111
+  Etapa 3 (Gargalo)      OTIMO           1.0000   0.000000    0.6000   0.087500    0.00     0.0038
+  Etapa 4 (Equilibrio)   OTIMO           1.0000   0.000000    0.6000   0.033333    0.00     0.0185
 
 Utilizacao media (u) e pico (p) por servidor:
   S1_Grande: CPU=60.0% (pico 80.0%), Rede=40.0% (pico 50.0%), RAM=37.5% (pico 50.0%), Armazenamento=40.0% (pico 50.0%)
@@ -20,19 +20,19 @@ Utilizacao media (u) e pico (p) por servidor:
 ==============================================================================
 SIMULACAO 2A: Sobrecarga no modo obrigatorio
 ==============================================================================
-Resultado: INVIAVEL na Etapa 2 (status HiGHS: Infeasible).
+Resultado: INVIAVEL (provado) na Etapa 2 (status HiGHS: Infeasible).
 
 ==============================================================================
 SIMULACAO 2B: Diagnostico no modo opcional com pesos
 ==============================================================================
-Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0909 s
+Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0268 s
 
 Evolucao por etapa lexicografica:
-  Etapa                      Incl    S (QoS)     U_max   Desvio D  Tempo (s)
-  Etapa 1 (Inclusao)       0.9231   0.015625    0.8750   0.112500     0.0610
-  Etapa 2 (QoS / S)        0.9231   0.015625    0.8750   0.112500     0.0109
-  Etapa 3 (Gargalo)        0.9231   0.015625    0.8750   0.112500     0.0034
-  Etapa 4 (Equilibrio)     0.9231   0.015625    0.8750   0.112500     0.0156
+  Etapa                  Status            Incl    S (QoS)     U_max   Desvio D    Gap%  Tempo (s)
+  Etapa 1 (Inclusao)     OTIMO           0.9231   0.015625    0.8750   0.112500    0.00     0.0154
+  Etapa 2 (QoS / S)      OTIMO           0.9231   0.015625    0.8750   0.112500    0.00     0.0067
+  Etapa 3 (Gargalo)      OTIMO           0.9231   0.015625    0.8750   0.112500    0.00     0.0022
+  Etapa 4 (Equilibrio)   OTIMO           0.9231   0.015625    0.8750   0.112500    0.00     0.0026
 
 Utilizacao media (u) e pico (p) por servidor:
   S1: CPU=87.5% (pico 100.0%), Rede=50.0% (pico 70.0%), RAM=62.5% (pico 81.2%), Armazenamento=50.0% (pico 65.0%)
@@ -43,13 +43,13 @@ Servicos nao alocados: J4_Baixo
 ==============================================================================
 SIMULACAO 3: Separacao entre pico e media
 ==============================================================================
-Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0109 s
+Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 0.0132 s
 
 Evolucao por etapa lexicografica:
-  Etapa                      Incl    S (QoS)     U_max   Desvio D  Tempo (s)
-  Etapa 2 (QoS / S)        1.0000   0.000000    0.5000   0.092188     0.0017
-  Etapa 3 (Gargalo)        1.0000   0.000000    0.5000   0.092188     0.0056
-  Etapa 4 (Equilibrio)     1.0000   0.000000    0.5000   0.092188     0.0036
+  Etapa                  Status            Incl    S (QoS)     U_max   Desvio D    Gap%  Tempo (s)
+  Etapa 2 (QoS / S)      OTIMO           1.0000   0.000000    0.5000   0.092188    0.00     0.0045
+  Etapa 3 (Gargalo)      OTIMO           1.0000   0.000000    0.5000   0.092188    0.00     0.0051
+  Etapa 4 (Equilibrio)   OTIMO           1.0000   0.000000    0.5000   0.092188    0.00     0.0035
 
 Utilizacao media (u) e pico (p) por servidor:
   S1: CPU=50.0% (pico 100.0%), Rede=40.0% (pico 70.0%), RAM=43.8% (pico 87.5%), Armazenamento=35.0% (pico 70.0%)
@@ -58,6 +58,20 @@ Utilizacao media (u) e pico (p) por servidor:
 ==============================================================================
 SIMULACAO 4: Cluster heterogeneo medio (6x24)
 ==============================================================================
-Resultado: INVIAVEL na Etapa 3 (status HiGHS: TimeLimit).
+Status: OTIMO | Auditoria de restricoes: OK | Tempo total: 24.1899 s
+
+Evolucao por etapa lexicografica:
+  Etapa                  Status            Incl    S (QoS)     U_max   Desvio D    Gap%  Tempo (s)
+  Etapa 2 (QoS / S)      OTIMO           1.0000   0.000000    0.7380   0.088795    0.00     0.0159
+  Etapa 3 (Gargalo)      OTIMO           1.0000   0.000000    0.5640   0.030566    0.00    18.7081
+  Etapa 4 (Equilibrio)   OTIMO           1.0000   0.000000    0.5640   0.027346    0.00     5.4659
+
+Utilizacao media (u) e pico (p) por servidor:
+  S1_G: CPU=55.0% (pico 72.4%), Rede=56.2% (pico 76.5%), RAM=54.0% (pico 67.6%), Armazenamento=54.4% (pico 63.9%)
+  S2_G: CPU=55.2% (pico 73.2%), Rede=53.0% (pico 68.0%), RAM=50.0% (pico 61.8%), Armazenamento=54.4% (pico 62.9%)
+  S3_M: CPU=53.8% (pico 74.4%), Rede=49.2% (pico 61.5%), RAM=54.3% (pico 68.1%), Armazenamento=55.0% (pico 64.0%)
+  S4_M: CPU=55.3% (pico 72.6%), Rede=52.3% (pico 69.7%), RAM=45.3% (pico 54.3%), Armazenamento=52.1% (pico 60.0%)
+  S5_P: CPU=54.1% (pico 69.2%), Rede=46.1% (pico 61.9%), RAM=42.2% (pico 51.7%), Armazenamento=50.9% (pico 57.2%)
+  S6_P: CPU=56.2% (pico 77.1%), Rede=44.2% (pico 56.9%), RAM=40.5% (pico 49.2%), Armazenamento=56.4% (pico 69.9%)
 
 Todas as verificacoes analiticas dos Cenarios 1, 2 e 3 passaram.
