@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import pulp
 
 
+# Dados de uma instancia do Modelo 1.
+# Indices usados: i = servidor, j = servico, k = recurso.
 @dataclass
 class InstanciaModelo1:
     """Estrutura de entrada do Modelo 1 (alocacao multidimensional base)."""
@@ -25,6 +27,7 @@ class InstanciaModelo1:
     )
 
 
+# Funcao auxiliar de compatibilidade entre versoes do PuLP.
 def criar_var(
     prob: pulp.LpProblem,
     nome: str,
@@ -38,6 +41,7 @@ def criar_var(
     return pulp.LpVariable(nome, lowBound=lowBound, upBound=upBound, cat=cat)
 
 
+# Apesar do nome, tambem resolve os modelos com variaveis binarias.
 def resolver_lp(
     prob: pulp.LpProblem, solver: pulp.LpSolver
 ) -> Tuple[str, str, Optional[float]]:
@@ -73,6 +77,7 @@ def resolver_lp(
     return "erro", status_str, None
 
 
+# Retorna o HiGHS disponivel, passando so os parametros que a interface aceita.
 def obter_solver_highs(
     time_limit: Optional[float] = None,
     msg: bool = False,
@@ -96,6 +101,7 @@ def obter_solver_highs(
     )
 
 
+# Recalcula as metricas a partir da alocacao, sem depender do solver.
 def calcular_metricas(
     inst: InstanciaModelo1,
     alocacao: List[List[int]],
@@ -103,6 +109,7 @@ def calcular_metricas(
     """Recalcula de forma independente todas as metricas a partir da matriz a[i][j]."""
     x, y, r = len(inst.servidores), len(inst.servicos), len(inst.recursos)
 
+    # u e a utilizacao media e uso_pico a utilizacao no pico.
     u = [
         [sum(inst.Dm[j][k] * alocacao[i][j] for j in range(y)) / inst.C[i][k] for k in range(r)]
         for i in range(x)
@@ -111,6 +118,8 @@ def calcular_metricas(
         [sum(inst.Dp[j][k] * alocacao[i][j] for j in range(y)) / inst.C[i][k] for k in range(r)]
         for i in range(x)
     ]
+    # Incl = inclusao ponderada, S = excesso medio acima de tau,
+    # U_max = maior utilizacao e D = desiquilibrio medio entre servidores.
     ubar = [sum(u[i][k] for i in range(x)) / x for k in range(r)]
     incl = sum(inst.p[j] * alocacao[i][j] for i in range(x) for j in range(y)) / sum(inst.p)
     S = sum(max(0.0, u[i][k] - inst.tau[k]) for i in range(x) for k in range(r)) / (x * r)
@@ -138,6 +147,7 @@ def calcular_metricas(
     }
 
 
+# Confere (R1) e (R2) na solucao final.
 def validar_solucao(
     inst: InstanciaModelo1,
     alocacao: List[List[int]],
@@ -167,6 +177,9 @@ def validar_solucao(
     return len(erros) == 0, erros
 
 
+# Resolve o Modelo 1 com o HiGHS em etapas lexicograficas:
+# 1) maximizar inclusao (so no opcional)  2) minimizar S
+# 3) minimizar U_max  4) minimizar D
 def resolver_modelo_1(
     inst: InstanciaModelo1,
     modo: str = "obrigatorio",
@@ -184,6 +197,7 @@ def resolver_modelo_1(
 
     historico: List[Dict[str, Any]] = []
     a_atual: Optional[List[List[int]]] = None
+    # Guardam o melhor valor de cada etapa para usar como restricao depois.
     incl_star, s_star, umax_star = 1.0, 0.0, 1.0
 
     etapas = ([1] if modo == "opcional" else []) + [2, 3] + ([4] if executar_etapa_4 else [])
@@ -194,24 +208,30 @@ def resolver_modelo_1(
         4: "Etapa 4 (Equilibrio)",
     }
 
+    # Nesta versao o problema e montado de novo em cada etapa. So a etapa 1
+    # e de maximizacao.
     for etapa in etapas:
         sentido = pulp.LpMaximize if etapa == 1 else pulp.LpMinimize
         prob = pulp.LpProblem(f"Modelo1_Etapa{etapa}", sentido)
 
+        # Variaveis binarias: a[i][j] = 1 se o servico j vai para o servidor i.
         a = [
             [criar_var(prob, f"a_{i}_{j}", cat=pulp.LpBinary) for j in range(y)]
             for i in range(x)
         ]
+        # Warm start: usa a solucao anterior como ponto inicial.
         if a_atual is not None:
             for i in range(x):
                 for j in range(y):
                     a[i][j].setInitialValue(a_atual[i][j])
 
+        # Obrigatorio: exatamente um servidor. Opcional: no maximo um.
         # (R1) Admissao
         for j in range(y):
             soma = pulp.lpSum(a[i][j] for i in range(x))
             prob += (soma == 1, f"R1_j{j}") if modo == "obrigatorio" else (soma <= 1, f"R1_j{j}")
 
+        # A soma dos picos de cada recurso nao pode exeder a capacidade.
         # (R2) Capacidade multidimensional no pico
         for i in range(x):
             for k in range(r):
@@ -220,6 +240,7 @@ def resolver_modelo_1(
                     f"R2_i{i}_k{k}",
                 )
 
+        # Expressoes lineares de utilizacao media e de inclusao.
         u = [
             [pulp.lpSum(inst.Dm[j][k] * a[i][j] for j in range(y)) / inst.C[i][k] for k in range(r)]
             for i in range(x)
@@ -231,6 +252,7 @@ def resolver_modelo_1(
         else:
             if modo == "opcional":
                 prob += (incl_expr >= incl_star - eps, "Fix_Incl")
+            # (R3): s mede o excesso acima de tau.
             s = [[criar_var(prob, f"s_{i}_{k}", lowBound=0.0) for k in range(r)] for i in range(x)]
             for i in range(x):
                 for k in range(r):
@@ -241,6 +263,7 @@ def resolver_modelo_1(
                 prob.setObjective(S_expr)
             else:
                 prob += (S_expr <= s_star + eps, "Fix_S")
+                # (R4): U_max precisa ser maior ou igual a todas as utilizacoes (min-max).
                 U_max = criar_var(prob, "U_max", lowBound=0.0, upBound=1.0)
                 for i in range(x):
                     for k in range(r):
@@ -250,6 +273,7 @@ def resolver_modelo_1(
                     prob.setObjective(U_max)
                 else:
                     prob += (U_max <= umax_star + eps, "Fix_Umax")
+                    # Etapa 4: o valor absoluto e linearizado com duas restricoes para cada d[i][k].
                     ubar = [pulp.lpSum(u[i][k] for i in range(x)) / x for k in range(r)]
                     d = [
                         [criar_var(prob, f"d_{i}_{k}", lowBound=0.0) for k in range(r)]
@@ -262,12 +286,14 @@ def resolver_modelo_1(
                     prob.setObjective(pulp.lpSum(d[i][k] for i in range(x) for k in range(r)) / (x * r))
 
         # Warm start so quando ha solucao anterior (evita aviso do PuLP na primeira etapa)
+        # O tempo limite vale para cada etapa separadamente.
         solver = obter_solver_highs(
             time_limit=time_limit, msg=msg, warm_start=a_atual is not None
         )
         t0 = time.perf_counter()
         estado, status_str, gap = resolver_lp(prob, solver)
         dt = time.perf_counter() - t0
+        # So afirma que e inviavel quando o solver realmente prova isso.
         if estado == "inviavel":
             return {
                 "viavel": False,
@@ -287,6 +313,7 @@ def resolver_modelo_1(
             }
         # estado "otimo" ou "limite_tempo" (com solucao viavel, nao provada otima)
 
+        # Le a solucao, arredonda e recalcula as metricas.
         a_atual = [
             [int(round(pulp.value(a[i][j]) or 0.0)) for j in range(y)]
             for i in range(x)
@@ -307,6 +334,7 @@ def resolver_modelo_1(
         })
 
     assert a_atual is not None
+    # Auditoria final das restrisoes.
     ok, erros = validar_solucao(inst, a_atual, modo=modo)
     return {
         "viavel": True,
@@ -320,6 +348,7 @@ def resolver_modelo_1(
     }
 
 
+# Mostra os resultados por etapa e o uso de cada servidor.
 def imprimir_relatorio(titulo: str, inst: InstanciaModelo1, res: Dict[str, Any]) -> None:
     print("\n" + "=" * 78)
     print(titulo)
@@ -368,6 +397,7 @@ def imprimir_relatorio(titulo: str, inst: InstanciaModelo1, res: Dict[str, Any])
 # SIMULACOES DE VALIDACAO
 # ==========================================================================
 
+# Cenario 1: testa o desempate feito pela etapa 4.
 def cenario_1_desempate_etapa_4() -> InstanciaModelo1:
     return InstanciaModelo1(
         servidores=["S1_Grande", "S2_Medio", "S3_Medio"],
@@ -379,6 +409,7 @@ def cenario_1_desempate_etapa_4() -> InstanciaModelo1:
     )
 
 
+# Cenario 2: sobrecarga. Inviavel no obrigatorio e usa os pesos no opcional.
 def cenario_2_sobrecarga_diagnostico() -> InstanciaModelo1:
     return InstanciaModelo1(
         servidores=["S1", "S2"],
@@ -390,6 +421,7 @@ def cenario_2_sobrecarga_diagnostico() -> InstanciaModelo1:
     )
 
 
+# Cenario 3: mostra a diferenca entre considerar pico e media.
 def cenario_3_separacao_pico_media() -> InstanciaModelo1:
     return InstanciaModelo1(
         servidores=["S1", "S2"],
@@ -401,6 +433,8 @@ def cenario_3_separacao_pico_media() -> InstanciaModelo1:
     )
 
 
+# Cenario 4: 6 servidores e 24 servicos, gerados com semente fixa para o
+# experimento poder ser repetido.
 def cenario_4_cluster_medio_aleatorio(seed: int = 42) -> InstanciaModelo1:
     rng = random.Random(seed)
     servidores = ["S1_G", "S2_G", "S3_M", "S4_M", "S5_P", "S6_P"]
@@ -429,6 +463,7 @@ def cenario_4_cluster_medio_aleatorio(seed: int = 42) -> InstanciaModelo1:
 
 
 if __name__ == "__main__":
+    # Executa os cenarios. Os tres primeiros tem asserts com os valores esperados.
     inst1 = cenario_1_desempate_etapa_4()
     res1 = resolver_modelo_1(inst1, modo="obrigatorio", executar_etapa_4=True)
     imprimir_relatorio("SIMULACAO 1: Heterogeneo viavel e efeito da Etapa 4", inst1, res1)
