@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import pulp
 
 
+# Guarda os dados do Modelo 2 ja prontos para o solver.
+# Indices usados: i = servidor, j = servico, k = recurso (k = 0 e a CPU).
 @dataclass
 class Modelo2:
     """Estrutura linear do Modelo 2 apos o pre-processamento (P1)-(P5)."""
@@ -24,6 +26,7 @@ class Modelo2:
     tau: List[float]
 
 
+# Funcao auxiliar para o codigo funcionar em versoes diferentes do PuLP.
 def criar_var(
     prob: pulp.LpProblem,
     nome: str,
@@ -37,6 +40,9 @@ def criar_var(
     return pulp.LpVariable(nome, lowBound=lowBound, upBound=upBound, cat=cat)
 
 
+# Apesar do nome, tambem resolve os modelos inteiros (com variaveis binarias).
+# Separa inviabilidade provada de parada por tempo, para nao tirar
+# concluzoes erradas.
 def resolver_lp(
     prob: pulp.LpProblem, solver: pulp.LpSolver
 ) -> Tuple[str, str, Optional[float]]:
@@ -72,6 +78,9 @@ def resolver_lp(
     return "erro", status_str, None
 
 
+# Transforma os dados de entrada nos coeficientes lineares do modelo.
+# A parte nao linear (latencia em funcao dos nucleos) e calculada aqui, antes
+# da otimizacao, por isso o modelo resolvido continua linear.
 def construir_modelo_2(
     servidores: List[str], arch: List[str], m: List[float], v: List[float],
     C_out: List[List[float]], servicos: List[str], p: List[float],
@@ -82,6 +91,8 @@ def construir_modelo_2(
 ) -> Modelo2:
     """Executa o pre-processamento (P1)-(P5) do Modelo 2 (ARM e x86)."""
     x, y = len(servidores), len(servicos)
+    # Monta a capacidade de cada servidor: a posicao 0 e o numero de nucleos m[i]
+    # e as outras sao os demais recursos. A matriz E comeca zerada (nenhum par elegivel).
     C = [[m[i], *C_out[i]] for i in range(x)]
     E = [[0] * y for _ in range(x)]
     Dp_ef = [[[0.0] * 4 for _ in range(y)] for _ in range(x)]
@@ -90,12 +101,25 @@ def construir_modelo_2(
     for i in range(x):
         arq = arch[i]
         for j in range(y):
+            # Pela lei de Amdahl, com c nucleos a latencia e (T1/v) * ((1-phi) + phi/c),
+            # onde phi e a fracao paralelizavel e v a velocidade relativa do nucleo.
+            # Exigindo latencia <= L e isolando c, temos c >= phi / g.
+            # Se g <= 0, a parte sequencial ja nao deixa cumprir o limite L, entao
+            # aumentar a quantidade de nucleos nao resolve (c_lat = infinito).
+            # No minimo 1 nucleo e nescessario.
             g = (L[j] * v[i] / T1[j]) - (1.0 - phi[j])                 # (P1)
             c_lat = max(1.0, phi[j] / g) if g > 0.0 else math.inf      # (P2)
+            # Com nucleos dedicados nao existe fracao de nucleo, entao arredonda pra cima.
             if dedicados and math.isfinite(c_lat):
                 c_lat = float(math.ceil(c_lat))
+            # O par (servidor i, servico j) so e elegivel se o servico for compativel com a
+            # arquitetura e se c_lat nao passar do paralelismo maximo q[j] nem dos
+            # nucleos m[i] do servidor.
             if A[j][arq] == 1 and c_lat <= min(q[j], m[i]):            # (P3)
                 E[i][j] = 1
+                # Converte a carga de CPU para nucleos do servidor i, considerando a velocidade
+                # do nucleo e a eficiencia do servico naquela arquitetura. No pico, reserva o
+                # maior valor entre o exigido pela latencia e o exigido pela carga.
                 den = v[i] * e[j][arq]
                 Dp_ef[i][j] = [max(c_lat, Wp[j] / den), *Dp_out[j]]    # (P4)-(P5)
                 Dm_ef[i][j] = [Wm[j] / den, *Dm_out[j]]
@@ -103,30 +127,44 @@ def construir_modelo_2(
     return Modelo2(servidores, arch, servicos, C, Dp_ef, Dm_ef, E, p, tau or [0.75] * 4)
 
 
+# Recebe a matriz de alocacao a[i][j] e recalcula tudo direto pelos dados,
+# sem usar os valores internos do solver. Serve para conferir a resposta.
 def avaliar_solucao(m2: Modelo2, a: List[List[int]], modo: str) -> Dict[str, Any]:
     """Recalcula metricas e audita as restricoes (R1), (R2) e (R3)."""
     x, y, r = len(m2.servidores), len(m2.servicos), 4
+    # u[i][k]: utilizacao media do recurso k no servidor i (entre 0 e 1).
     u = [
         [sum(m2.Dm_ef[i][j][k] * a[i][j] for j in range(y) if m2.E[i][j]) / m2.C[i][k]
          for k in range(r)]
         for i in range(x)
     ]
+    # Metricas:
+    # Incl  = fracao do peso total dos servicos que foi alocada
+    # S     = media do que passou do limite seguro tau
+    # U_max = maior utilizacao entre todos os servidores e recursos (gargalo)
+    # D     = desvio absoluto medio, mede o desiquilibrio entre os servidores
     ubar = [sum(u[i][k] for i in range(x)) / x for k in range(r)]
     incl = sum(m2.p[j] * a[i][j] for i in range(x) for j in range(y)) / sum(m2.p)
     S = sum(max(0.0, u[i][k] - m2.tau[k]) for i in range(x) for k in range(r)) / (x * r)
     u_max = max(u[i][k] for i in range(x) for k in range(r))
     D = sum(abs(u[i][k] - ubar[k]) for i in range(x) for k in range(r)) / (x * r)
 
+    # (R1): no modo obrigatorio cada servico vai para exatamente um servidor,
+    # no opcional vai para no maximo um.
     ok_r1 = all(
         (sum(a[i][j] for i in range(x)) == 1) if modo == "obrigatorio"
         else (sum(a[i][j] for i in range(x)) <= 1)
         for j in range(y)
     )
+    # (R2): a soma das demandas de pico nao pode ultrapasar a capacidade.
     ok_r2 = all(
         sum(m2.Dp_ef[i][j][k] * a[i][j] for j in range(y) if m2.E[i][j]) <= m2.C[i][k] + 1e-6
         for i in range(x) for k in range(r)
     )
+    # (R3): so pode alocar em pares elegiveis.
     ok_r3 = all(a[i][j] <= m2.E[i][j] for i in range(x) for j in range(y))
+    # Organiza a resposta para impressao: onde cada servico ficou, quais ficaram
+    # de fora e quantos foram para cada arquitetura.
     aloc = {m2.servicos[j]: m2.servidores[i] for i in range(x) for j in range(y) if a[i][j] == 1}
     fora = [m2.servicos[j] for j in range(y) if m2.servicos[j] not in aloc]
     arq_cnt = {
@@ -137,6 +175,8 @@ def avaliar_solucao(m2: Modelo2, a: List[List[int]], modo: str) -> Dict[str, Any
             "alocados": aloc, "nao_alocados": fora, "arq": arq_cnt}
 
 
+# Procura uma interface do HiGHS disponivel e passa somente os parametros que
+# ela aceita (tempo limite e warm start).
 def _solver_highs(time_limit: Optional[float] = None, warm_start: bool = True) -> pulp.LpSolver:
     for cls in (getattr(pulp, "HiGHS", None), getattr(pulp, "HiGHS_CMD", None)):
         if cls is None:
@@ -153,6 +193,9 @@ def _solver_highs(time_limit: Optional[float] = None, warm_start: bool = True) -
     raise RuntimeError("HiGHS indisponivel. Instale com: pip install pulp[highs]")
 
 
+# Resolve o Modelo 2 como programacao inteira com o HiGHS, em etapas
+# lexicograficas. O mesmo problema e reaproveitado: a cada etapa troca o
+# objetivo e adiciona restricoes.
 def resolver_modelo_2_highs(
     m2: Modelo2, modo: str = "obrigatorio", etapa4: bool = True,
     eps: float = 1e-6, time_limit: Optional[float] = None,
@@ -163,23 +206,31 @@ def resolver_modelo_2_highs(
     # "otimo": todas as etapas provadas otimas; "falha": motivo de parada sem solucao
     estado_global: Dict[str, Any] = {"otimo": True, "falha": None, "tem_inicial": False}
 
+    # a[i][j] = 1 se o servico j for alocado no servidor i, senao 0.
+    # O problema e de minimizacao.
     mdl = pulp.LpProblem("Modelo2_HiGHS", pulp.LpMinimize)
     a = [[criar_var(mdl, f"a_{i}_{j}", cat=pulp.LpBinary) for j in range(y)] for i in range(x)]
 
+    # Cada servico em exatamente um servidor (obrigatorio) ou no maximo um (opcional).
     for j in range(y):                                                 # (R1) Admissao
         soma = pulp.lpSum(a[i][j] for i in range(x))
         mdl += (soma == 1) if modo == "obrigatorio" else (soma <= 1)
+    # Se E[i][j] = 0, a variavel e forcada a ser zero.
     for i in range(x):                                                 # (R3) Elegibilidade
         for j in range(y):
             mdl += a[i][j] <= m2.E[i][j]
+    # A capacidade de cada recurso tem que suportar a soma dos picos.
     for i in range(x):                                                 # (R2) Capacidade pico
         for k in range(r):
             mdl += pulp.lpSum(m2.Dp_ef[i][j][k] * a[i][j] for j in range(y) if m2.E[i][j]) <= m2.C[i][k]
 
+    # Expressoes lineares da utilizacao media e da inclusao ponderada.
     u = [[pulp.lpSum(m2.Dm_ef[i][j][k] * a[i][j] for j in range(y) if m2.E[i][j]) / m2.C[i][k]
           for k in range(r)] for i in range(x)]
     incl_expr = pulp.lpSum(m2.p[j] * a[i][j] for i in range(x) for j in range(y)) / sum(m2.p)
 
+    # Troca o objetivo, resolve e retorna a matriz de alocacao (ou None).
+    # A solucao encontrada e usada como valor inicial na proxima etapa.
     def rodar(obj: Any) -> Optional[List[List[int]]]:
         mdl.setObjective(obj)
         solver = _solver_highs(time_limit, warm_start=estado_global["tem_inicial"])
@@ -193,6 +244,7 @@ def resolver_modelo_2_highs(
             return None
         if estado == "limite_tempo":
             estado_global["otimo"] = False
+        # Arredonda os valores para evitar coisas como 0,999999.
         sol = [[int(round(pulp.value(a[i][j]) or 0.0)) for j in range(y)] for i in range(x)]
         for i in range(x):
             for j in range(y):
@@ -200,6 +252,8 @@ def resolver_modelo_2_highs(
         estado_global["tem_inicial"] = True
         return sol
 
+    # So no modo opcional. Depois a inclusao obtida e travada como restricao
+    # (com a tolerancia eps).
     if modo == "opcional":                                             # Etapa 1: max Incl == min(-Incl)
         sol = rodar(-1.0 * incl_expr)
         if sol is None:
@@ -207,6 +261,9 @@ def resolver_modelo_2_highs(
         mdl += incl_expr >= avaliar_solucao(m2, sol, modo)["Incl"] - eps
 
     s = [[criar_var(mdl, f"s_{i}_{k}", lowBound=0.0) for k in range(r)] for i in range(x)]
+    # s[i][k] e o quanto a utilizacao passou de tau[k]. Como S e minimizado e
+    # s >= 0, no otimo s vale max(0, u - tau). Nas etapas seguintes o que fica
+    # limitado e o valor de S.
     for i in range(x):                                                 # Etapa 2: QoS / folga S
         for k in range(r):
             mdl += s[i][k] >= u[i][k] - m2.tau[k]
@@ -216,6 +273,8 @@ def resolver_modelo_2_highs(
         return {"viavel": False, "status": estado_global["falha"], "tempo_s": time.perf_counter() - t0}
     mdl += S_expr <= avaliar_solucao(m2, sol, modo)["S"] + eps
 
+    # Tecnica min-max: U_max fica maior ou igual a todas as utilizacoes e e
+    # minimizado, diminuindo o servidor mais carregado.
     U_max = criar_var(mdl, "U_max", lowBound=0.0, upBound=1.0)         # Etapa 3: Gargalo Min-Max
     for i in range(x):
         for k in range(r):
@@ -224,6 +283,8 @@ def resolver_modelo_2_highs(
     if sol is None:
         return {"viavel": False, "status": estado_global["falha"], "tempo_s": time.perf_counter() - t0}
 
+    # Trava o U_max e distribui melhor a carga. Cada |u - media| e linearizado
+    # com duas restricoes.
     if etapa4:                                                         # Etapa 4: Equilibrio L1
         mdl += U_max <= avaliar_solucao(m2, sol, modo)["U_max"] + eps
         ubar = [pulp.lpSum(u[i][k] for i in range(x)) / x for k in range(r)]
@@ -241,6 +302,8 @@ def resolver_modelo_2_highs(
             "tempo_s": time.perf_counter() - t0, **avaliar_solucao(m2, sol, modo)}
 
 
+# Imprime o resumo. Se der inviavel, tambem mostra os servicos que nao tem
+# nenhum servidor elegivel.
 def mostrar(titulo: str, m2: Modelo2, r: Dict[str, Any]) -> None:
     if not r["viavel"]:
         sem_eleg = [m2.servicos[j] for j in range(len(m2.servicos))
@@ -258,6 +321,9 @@ def mostrar(titulo: str, m2: Modelo2, r: Dict[str, Any]) -> None:
               f"{fora} | t={r['tempo_s']:.4f}s")
 
 
+# Gera um cenario com 6 servidores (3 x86 e 3 ARM) e 24 servicos, divididos em
+# 3 perfis de 8: web paralela, API mista e servico sequencial sensivel a latencia.
+# Os valores sao sorteados dentro das faixas definidas em perfis.
 def cenario_4_misto_6x24(seed: int = 42, v_arm: float = 0.51) -> Modelo2:
     """Cluster misto 6x24 (Ice Lake-SP, Zen 3 e Ampere Altra - Ansari et al., 2024)."""
     rng = random.Random(seed)
@@ -268,6 +334,7 @@ def cenario_4_misto_6x24(seed: int = 42, v_arm: float = 0.51) -> Modelo2:
     ]
     servs, p, Wp, Wm, phi, T1, L, q, e, A, Dp_o, Dm_o = ([] for _ in range(12))
 
+    # j // 8 define o perfil. Os dois ultimos servicos so rodam em x86.
     for j in range(24):
         nome, r_wm, r_wp, r_phi, r_t1, r_l, q_j, r_ea, r_ex = perfis[j // 8]
         servs.append(f"{nome}_{(j % 8) + 1:02d}")
@@ -296,6 +363,7 @@ def cenario_4_misto_6x24(seed: int = 42, v_arm: float = 0.51) -> Modelo2:
 
 
 if __name__ == "__main__":
+    # Instancias pequenas com asserts para verificar o comportamento esperado.
     # Simulacao 1: Especializacao natural ARM vs x86 (2x3)
     c1 = construir_modelo_2(
         ["S1_x86", "S2_ARM"], ["X86", "ARM"], [32, 80], [1.0, 0.5],
@@ -310,6 +378,7 @@ if __name__ == "__main__":
     assert r1["alocados"] == {"J1_Web1": "S2_ARM", "J2_Web2": "S2_ARM", "J3_SeqRigido": "S1_x86"}
     assert abs(r1["S"]) < 1e-6 and abs(r1["U_max"] - 0.40) < 1e-6 and abs(r1["D"] - 0.003125) < 1e-6
 
+    # Testa cada regra do pre-processamento separadamente.
     # Simulacao 2: Regras de pre-processamento (A[j,t], q[j], c_lat no pico e e[j,t])
     c2 = construir_modelo_2(
         ["S1_x86", "S2_ARM"], ["X86", "ARM"], [16, 40], [1.0, 0.5],
@@ -330,6 +399,7 @@ if __name__ == "__main__":
     assert r2["alocados"]["J3_LatenciaDomina"] == "S1_x86" and r2["alocados"]["J4_EscalaBaixaARM"] == "S2_ARM"
     assert abs(r2["S"]) < 1e-6 and abs(r2["U_max"] - 0.60) < 1e-6 and abs(r2["D"] - 0.0453125) < 1e-6
 
+    # Mostra a diferenca entre o modo obrigatorio e o opcional.
     # Simulacao 3A e 3B: Cluster so ARM (obrigatorio inviavel -> diagnostico opcional)
     c3 = construir_modelo_2(
         ["S1_ARM", "S2_ARM"], ["ARM", "ARM"], [40, 40], [0.5, 0.5],
@@ -346,11 +416,16 @@ if __name__ == "__main__":
     assert abs(r3b["Incl"] - 8 / 18) < 1e-6 and abs(r3b["U_max"] - 0.40) < 1e-6
     assert abs(r3b["D"]) < 1e-6 and r3b["nao_alocados"] == ["J3_SemElegivel"]
 
+    # Instancia maior, com limite de tempo de 30 s em cada chamada do solver.
     # Simulacao 4: Cluster misto 6x24 (144 binarias)
     c4 = cenario_4_misto_6x24(seed=42, v_arm=0.51)
     r4 = resolver_modelo_2_highs(c4, "obrigatorio", time_limit=30.0)
     mostrar("Sim 4  (Misto 6x24)", c4, r4)
 
+    # Analise de sensibilidade: muda a velocidade relativa do nucleo ARM e observa
+    # o efeito na elegibilidade, na alocacao e nas metricas.
+    # A coluna Eleg_ARM considera o primeiro servidor ARM (os tres tem os mesmos
+    # parametros de CPU, entao o valor e igual para todos).
     # Simulacao 5: Analise de sensibilidade em v_ARM
     print("\nSim 5 (Sensibilidade v_ARM no cluster 6x24):")
     print(f"  {'v_ARM':>5} {'Eleg_ARM':>8} {'X86':>5} {'ARM':>5} {'S (QoS)':>10} {'U_max':>8} {'Desvio D':>10} {'Tempo(s)':>9}")
