@@ -10,6 +10,8 @@ import numpy as np
 from scipy.optimize import linprog
 
 
+# Dados de uma instancia do Modelo 1.
+# Indices usados: i = servidor, j = servico, k = recurso.
 @dataclass
 class InstanciaModelo1:
     """Estrutura de entrada do Modelo 1 (alocacao multidimensional base)."""
@@ -25,6 +27,8 @@ class InstanciaModelo1:
         default_factory=lambda: ["CPU", "Rede", "RAM", "Armazenamento"]
     )
 
+    # Valida os dados logo na criacao: dimensoes, pesos positivos, tau entre 0 e 1,
+    # capacidades positivas e demanda media menor ou igual a de pico.
     def __post_init__(self) -> None:
         x = len(self.servidores)
         y = len(self.servicos)
@@ -51,6 +55,7 @@ class InstanciaModelo1:
                     )
 
 
+# Recalcula as metricas a partir da alocacao, sem depender do solver.
 def calcular_metricas(
     inst: InstanciaModelo1,
     alocacao: List[List[int]],
@@ -60,6 +65,7 @@ def calcular_metricas(
     y = len(inst.servicos)
     r = len(inst.recursos)
 
+    # u guarda a utilizacao media e uso_pico a utilizacao no pico.
     u = [[0.0 for _ in range(r)] for _ in range(x)]
     uso_pico = [[0.0 for _ in range(r)] for _ in range(x)]
     for i in range(x):
@@ -69,6 +75,8 @@ def calcular_metricas(
             u[i][k] = soma_m / inst.C[i][k]
             uso_pico[i][k] = soma_p / inst.C[i][k]
 
+    # Incl = inclusao ponderada, S = excesso medio acima de tau,
+    # U_max = maior utilizacao e D = desiquilibrio medio entre servidores.
     ubar = [sum(u[i][k] for i in range(x)) / x for k in range(r)]
     peso_total = sum(inst.p)
     peso_admitido = sum(
@@ -104,6 +112,7 @@ def calcular_metricas(
     }
 
 
+# Confere se a solucao respeita (R1) e (R2) e devolve a lista de erros.
 def validar_solucao(
     inst: InstanciaModelo1,
     alocacao: List[List[int]],
@@ -139,6 +148,8 @@ def validar_solucao(
     return len(erros) == 0, erros
 
 
+# Aqui as binarias sao relaxadas para o intervalo [0,1]. A integralidade
+# e garantida depois pelo Branch-and-Bound.
 def montar_lp_etapa(
     inst: InstanciaModelo1,
     etapa: int,
@@ -167,6 +178,8 @@ def montar_lp_etapa(
     n_d = x * r
     peso_total = sum(inst.p)
 
+    # O tamanho do vetor de variaveis depende da etapa:
+    # [a, s, U_max, d]
     if etapa == 1:
         n_vars = n_a
     elif etapa == 2:
@@ -181,6 +194,7 @@ def montar_lp_etapa(
     idx_umax = n_a + n_s
     offset_d = n_a + n_s + 1
 
+    # Funcao objetivo. Como o linprog so minimiza, a etapa 1 usa sinal negativo.
     c = np.zeros(n_vars, dtype=float)
     if etapa == 1:
         # Maximizar Incl equivale a minimizar -Incl
@@ -203,6 +217,7 @@ def montar_lp_etapa(
     A_eq_rows: List[np.ndarray] = []
     b_eq_vals: List[float] = []
 
+    # Restricao de igualdade no obrigatorio e de desigualdade no opcional.
     # (R1) Admissao
     for j in range(y):
         row = np.zeros(n_vars, dtype=float)
@@ -215,6 +230,7 @@ def montar_lp_etapa(
             A_ub_rows.append(row)
             b_ub_vals.append(1.0)
 
+    # Usa a demanda de pico, que e o caso mais critico.
     # (R2) Capacidade multidimensional no pico
     for i in range(x):
         for k in range(r):
@@ -224,6 +240,7 @@ def montar_lp_etapa(
             A_ub_rows.append(row)
             b_ub_vals.append(inst.C[i][k])
 
+    # Impede que as proximas etapas percam inclusao.
     # Restricao da Etapa 1 fixada nas etapas seguintes (modo opcional)
     if etapa >= 2 and modo == "opcional":
         assert incl_star is not None
@@ -234,6 +251,7 @@ def montar_lp_etapa(
         A_ub_rows.append(row)
         b_ub_vals.append(-(incl_star - eps))
 
+    # A demanda media pode passar da zona segura, mas o excesso s e penalizado.
     # (R3) Excesso acima da zona segura: u[i,k] - s[i,k] <= tau[k]
     if etapa >= 2:
         for i in range(x):
@@ -245,6 +263,7 @@ def montar_lp_etapa(
                 A_ub_rows.append(row)
                 b_ub_vals.append(inst.tau[k])
 
+    # Limita S ao melhor valor encontrado e liga U_max a todas as utilizacoes.
     # Restricao da Etapa 2 fixada e (R4) Gargalo Min-Max
     if etapa >= 3:
         assert s_star is not None
@@ -264,6 +283,8 @@ def montar_lp_etapa(
                 A_ub_rows.append(row)
                 b_ub_vals.append(0.0)
 
+    # O fator (1 - 1/x) ou (-1/x) vem de escrever u[i,k] menos a media dos
+    # servidores diretamente em funcao das variaveis a.
     # Restricao da Etapa 3 fixada e linearizacao do desvio absoluto L1
     if etapa == 4:
         assert umax_star is not None
@@ -307,6 +328,7 @@ def montar_lp_etapa(
     return c, A_ub, b_ub, A_eq, b_eq, bounds_cont
 
 
+# Escolhe a variavel de ramificacao. Se retornar None, a solucao ja e inteira.
 def _escolher_variavel_fracionaria(
     x_vec: np.ndarray,
     n_bin: int,
@@ -325,6 +347,7 @@ def _escolher_variavel_fracionaria(
     return melhor_idx
 
 
+# Converte o vetor do linprog para a matriz a[i][j].
 def _vetor_para_matriz(x_vec: np.ndarray, x: int, y: int) -> List[List[int]]:
     return [
         [int(round(float(x_vec[i * y + j]))) for j in range(y)]
@@ -332,6 +355,8 @@ def _vetor_para_matriz(x_vec: np.ndarray, x: int, y: int) -> List[List[int]]:
     ]
 
 
+# Gera as fixacoes do no filho. Quando a[i,j] = 1, o mesmo servico e zerado
+# nos outros servidores, o que reduz o tamanho da arvore.
 def _propagar_fixacao(
     fixacoes: Tuple[int, ...],
     idx_alvo: int,
@@ -363,6 +388,10 @@ def _propagar_fixacao(
     return tuple(novo)
 
 
+# Branch-and-Bound proprio. Tipos de poda:
+# - inviabilidade: o no nao tem solucao
+# - limitante: o no nao consegue melhorar o incumbente
+# - integralidade: a relaxacao ja deu uma solucao inteira
 def branch_and_bound_lp(
     c: np.ndarray,
     A_ub: Optional[np.ndarray],
@@ -385,6 +414,7 @@ def branch_and_bound_lp(
     t0 = time.perf_counter()
     n_bin = x * y
 
+    # Traduz as fixacoes (-1 livre, 0 ou 1) para os limites do linprog.
     def construir_bounds(
         fix: Tuple[int, ...],
     ) -> List[Tuple[float, Optional[float]]]:
@@ -398,6 +428,7 @@ def branch_and_bound_lp(
                 b_bin.append((0.0, 1.0))
         return b_bin + bounds_cont
 
+    # best_val e best_a guardam o incumbente (melhor solucao inteira ate agora).
     best_val = float("inf")
     best_a: Optional[List[List[int]]] = None
     if incumbente_inicial is not None:
@@ -408,6 +439,7 @@ def branch_and_bound_lp(
     podas_limitante = 0
     podas_integralidade = 0
 
+    # Resolve o no raiz, com todas as variaveis livres.
     raiz_fix = (-1,) * n_bin
     res_raiz = linprog(
         c,
@@ -436,7 +468,9 @@ def branch_and_bound_lp(
             "tempo_s": time.perf_counter() - t0,
         }
 
+    # Como e minimizacao, o valor da relaxacao e um limite inferior.
     root_lb = float(res_raiz.fun)
+    # O incumbente inicial ja e otimo dentro da tolerancia.
     if root_lb >= best_val - tol_bound:
         podas_limitante += 1
         return {
@@ -454,6 +488,7 @@ def branch_and_bound_lp(
             "tempo_s": time.perf_counter() - t0,
         }
 
+    # Se a raiz ja saiu inteira, nao precisa ramificar.
     idx_frac_raiz = _escolher_variavel_fracionaria(res_raiz.x, n_bin, tol_int)
     if idx_frac_raiz is None:
         podas_integralidade += 1
@@ -475,12 +510,16 @@ def branch_and_bound_lp(
             "tempo_s": time.perf_counter() - t0,
         }
 
+    # Busca Best-First: o heapq retira sempre o no de menor limitante.
+    # O id_no serve de desempate.
     # Fila de prioridade: (limitante_dual, id_no, fixacoes, idx_ramificacao)
     heap: List[Tuple[float, int, Tuple[int, ...], int]] = []
     contador_id = 0
     heapq.heappush(heap, (root_lb, contador_id, raiz_fix, idx_frac_raiz))
 
     status = "OTIMO"
+    # Laco principal. Para quando a fila acaba, quando nenhum no pode melhorar
+    # ou quando atinge o limite de tempo ou de nos.
     while heap:
         if heap[0][0] >= best_val - tol_bound:
             podas_limitante += len(heap)
@@ -495,6 +534,7 @@ def branch_and_bound_lp(
 
         _, _, node_fix, idx_branch = heapq.heappop(heap)
 
+        # Cria e avalia os dois filhos (a = 1 e a = 0).
         for ramo_val in (1, 0):
             child_fix = _propagar_fixacao(node_fix, idx_branch, ramo_val, x, y)
             if child_fix is None:
@@ -531,6 +571,8 @@ def branch_and_bound_lp(
                 contador_id += 1
                 heapq.heappush(heap, (child_lb, contador_id, child_fix, idx_frac))
 
+    # Fim da busca. Sem incumbente, so e inviavel se a arvore foi toda explorada,
+    # senao apenas o limite foi atingido.
     tempo_s = time.perf_counter() - t0
     if best_a is None:
         return {
@@ -548,6 +590,7 @@ def branch_and_bound_lp(
             "tempo_s": tempo_s,
         }
 
+    # O gap relativo mede a distancia entre a melhor solucao e o limite dual.
     otimo_provado = (status == "OTIMO") or (not heap)
     dual_lb = best_val if otimo_provado else heap[0][0]
     if otimo_provado or (abs(best_val) < 1e-9 and abs(dual_lb) < 1e-9):
@@ -571,6 +614,8 @@ def branch_and_bound_lp(
     }
 
 
+# Chama o B&B uma vez por etapa, na ordem de prioridade. O resultado de uma
+# etapa vira restricao e incumbente inicial da seguinte.
 def resolver_modelo_1_bnb(
     inst: InstanciaModelo1,
     modo: str = "obrigatorio",
@@ -593,6 +638,7 @@ def resolver_modelo_1_bnb(
     umax_star = 1.0
 
     # ------------------------------------------------------------------
+    # No modo obrigatorio essa etapa nao e nescessaria, pois a inclusao e 100%.
     # ETAPA 1: INCLUSAO (apenas no modo opcional)
     # ------------------------------------------------------------------
     if modo == "opcional":
@@ -618,6 +664,7 @@ def resolver_modelo_1_bnb(
         historico.append({"etapa": "Etapa 1 (Inclusao)", **r1, **m1})
 
     # ------------------------------------------------------------------
+    # Reduz o quanto os servidores passam da zona segura.
     # ETAPA 2: QUALIDADE DE SERVICO (minimizar folga media S)
     # ------------------------------------------------------------------
     inc2 = None
@@ -646,6 +693,7 @@ def resolver_modelo_1_bnb(
     historico.append({"etapa": "Etapa 2 (QoS / S)", **r2, **m2})
 
     # ------------------------------------------------------------------
+    # Entre as solucoes com o mesmo S (com tolerancia), busca o menor U_max.
     # ETAPA 3: GARGALO (minimizar U_max)
     # ------------------------------------------------------------------
     inc3 = (m2["U_max"], a_atual)
@@ -671,6 +719,7 @@ def resolver_modelo_1_bnb(
     historico.append({"etapa": "Etapa 3 (Gargalo)", **r3, **m3})
 
     # ------------------------------------------------------------------
+    # Serve de desempate para escolher a solucao mais equilibrada.
     # ETAPA 4: EQUILIBRIO ENTRE SERVIDORES (opcional, desvio absoluto L1)
     # ------------------------------------------------------------------
     if executar_etapa_4:
@@ -702,6 +751,7 @@ def resolver_modelo_1_bnb(
         historico.append({"etapa": "Etapa 4 (Equilibrio)", **r4, **m4})
 
     assert a_atual is not None
+    # Auditoria final da alocacao.
     ok, erros = validar_solucao(inst, a_atual, modo=modo)
     otimo_global = all(h["otimo_provado"] for h in historico)
 
@@ -718,6 +768,7 @@ def resolver_modelo_1_bnb(
     }
 
 
+# Mostra o relatorio: resultado por etapa, podas e uso de cada servidor.
 def imprimir_relatorio_bnb(
     titulo: str,
     inst: InstanciaModelo1,
@@ -785,6 +836,7 @@ def imprimir_relatorio_bnb(
 # SIMULACOES DE VALIDACAO E ESCALABILIDADE
 # ==========================================================================
 
+# Cenario 1: ha empate em U_max e a etapa 4 escolhe a opcao mais equilibrada.
 def cenario_1_desempate_etapa_4() -> InstanciaModelo1:
     """Mesma instancia do script HiGHS: empate em U_max=0.60 quebrado pela Etapa 4."""
     return InstanciaModelo1(
@@ -814,6 +866,8 @@ def cenario_1_desempate_etapa_4() -> InstanciaModelo1:
     )
 
 
+# Cenario 2: nao cabe todo mundo, entao o modo opcional usa os pesos
+# para decidir quem entra.
 def cenario_2_sobrecarga_diagnostico() -> InstanciaModelo1:
     """Mesma instancia do script HiGHS: sobrecarga no obrigatorio e pesos no opcional."""
     return InstanciaModelo1(
@@ -840,6 +894,8 @@ def cenario_2_sobrecarga_diagnostico() -> InstanciaModelo1:
     )
 
 
+# Cenario 3: mostra que o limite de pico impede certas combinacoes, mesmo
+# quando a media caberia.
 def cenario_3_separacao_pico_media() -> InstanciaModelo1:
     """Mesma instancia do script HiGHS: picos impedem consolidacao insegura."""
     return InstanciaModelo1(
@@ -864,6 +920,7 @@ def cenario_3_separacao_pico_media() -> InstanciaModelo1:
     )
 
 
+# Cenario 4: instancia aleatoria com semente fixa (3 servidores, 9 servicos).
 def cenario_4_cluster_pequeno_aleatorio(seed: int = 7) -> InstanciaModelo1:
     """Cluster heterogeneo intermediario (3 servidores x 9 servicos = 27 binarias)."""
     rng = random.Random(seed)
@@ -905,6 +962,7 @@ def cenario_4_cluster_pequeno_aleatorio(seed: int = 7) -> InstanciaModelo1:
     )
 
 
+# Cenario 5: instancia maior (6 x 24) para comparar com o HiGHS.
 def cenario_5_cluster_medio_highs(seed: int = 42) -> InstanciaModelo1:
     """Mesma instancia 6x24 (144 binarias) do script HiGHS para teste de escalabilidade."""
     rng = random.Random(seed)
@@ -950,6 +1008,7 @@ def cenario_5_cluster_medio_highs(seed: int = 42) -> InstanciaModelo1:
 
 
 if __name__ == "__main__":
+    # Os asserts comparam os resultados com os valores esperados.
     # Simulacao 1: Desempate da Etapa 4 (15 variaveis binarias)
     inst1 = cenario_1_desempate_etapa_4()
     res1 = resolver_modelo_1_bnb(inst1, modo="obrigatorio", executar_etapa_4=True)
@@ -1004,6 +1063,7 @@ if __name__ == "__main__":
         "SIMULACAO 4 (B&B): Cluster heterogeneo intermediario (3x9)", inst4, res4
     )
 
+    # Se um limite for atingido, a solucao pode ser viavel sem prova de otimalidade.
     # Simulacao 5: Mesma instancia 6x24 (144 binarias) do script HiGHS
     # Limites curtos por etapa para observar o contraste de escalabilidade com o HiGHS
     inst5 = cenario_5_cluster_medio_highs(seed=42)
